@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bus Tracker (Driver)</title>
+  <style>
+    body { font-family: sans-serif; padding: 10px; }
+    select, button { padding: 10px; margin: 8px 0; font-size: 16px; }
+    #status { margin-top: 12px; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h2>Bus Driver Tracking</h2>
+  <label for="busId">Select Bus:</label>
+  <select id="busId">
+    <option value="">-- Choose Bus --</option>
+    <option value="48A">48A</option>
+    <option value="5M">5M</option>
+    <option value="C3">C3</option>
+    <option value="4B">4B</option>
+    <option value="48AD">48AD</option>
+    <option value="48Y">48Y</option>
+  </select><br>
+  <button id="startBtn">Start Tracking</button>
+  <button id="stopBtn" style="display:none">Stop Tracking</button>
+
+  <div id="status">Waiting to start...</div>
+
+  <script type="module">
+    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm';
+
+    const SUPABASE_URL = 'https://fbfpvjoyujrpuefpracc.supabase.co/';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZiZnB2am95dWpycHVlZnByYWNjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc5NDcwMDAsImV4cCI6MjA3MzUyMzAwMH0.6qrHZTfe4nViQR_b1ep2RozEm4pv13ZQo_eVJhGbk3U';
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const statusDiv = document.getElementById('status');
+    const busIdSelect = document.getElementById('busId');
+    let watchId = null;
+
+    async function startTracking() {
+      const busId = busIdSelect.value;
+      if (!busId) return alert("Select a bus number");
+
+      if (!navigator.geolocation) return alert("Geolocation not supported");
+      
+      startBtn.style.display = 'none';
+      stopBtn.style.display = 'inline-block';
+      statusDiv.innerText = "Getting location...";
+
+      watchId = navigator.geolocation.watchPosition(async pos => {
+        const { latitude, longitude } = pos.coords;
+        statusDiv.innerText = `Tracking ${busId}: ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
+
+        const { error } = await supabase.from('buses').upsert({
+          id: busId,
+          lat: latitude,
+          lon: longitude,
+          timestamp: new Date().toISOString()
+        });
+        if (error) console.error(error);
+      }, err => {
+        console.error(err);
+        statusDiv.innerText = "Location error: " + err.message;
+      }, { enableHighAccuracy: true });
+    }
+
+    function stopTracking() {
+      if (watchId) navigator.geolocation.clearWatch(watchId);
+      watchId = null;
+      startBtn.style.display = 'inline-block';
+      stopBtn.style.display = 'none';
+      statusDiv.innerText = "Stopped tracking.";
+    }
+
+    startBtn.addEventListener('click', startTracking);
+    stopBtn.addEventListener('click', stopTracking);
+  </script>
+</body>
+</html>
