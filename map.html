@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Live Bus Map</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
+  <style>
+    #map { height: 85vh; width: 100%; }
+    body { font-family: sans-serif; margin: 0; padding: 0; }
+    .controls { padding: 8px; background: #f8f8f8; display: flex; gap: 8px; align-items: center; }
+    select, button { padding: 6px; }
+  </style>
+</head>
+<body>
+  <div class="controls">
+    <label>Select Bus:</label>
+    <select id="busSelect">
+      <option value="">--Choose Bus--</option>
+      <option value="48A">48A</option>
+      <option value="5M">5M</option>
+      <option value="C3">C3</option>
+      <option value="4B">4B</option>
+      <option value="48AD">48AD</option>
+      <option value="48Y">48Y</option>
+    </select>
+    <button id="trackBtn">Track Selected Bus</button>
+    <span id="eta"></span>
+  </div>
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+  <script type="module">
+    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm';
+
+    const SUPABASE_URL = 'https://fbfpvjoyujrpuefpracc.supabase.co/';
+    const SUPABASE_ANON_KEY = 'YOUR-ANON-KeyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZiZnB2am95dWpycHVlZnByYWNjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc5NDcwMDAsImV4cCI6MjA3MzUyMzAwMH0.6qrHZTfe4nViQR_b1ep2RozEm4pv13ZQo_eVJhGbk3UY';
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    const busSelect = document.getElementById('busSelect');
+    const trackBtn = document.getElementById('trackBtn');
+    const etaEl = document.getElementById('eta');
+    const map = L.map('map').setView([9.94, 78.118], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+    let busMarker = null;
+    let userMarker = null;
+    let pollInterval = null;
+
+    function getDistanceKm(lat1, lon1, lat2, lon2) {
+      const R = 6371;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(dLat/2) ** 2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2) ** 2;
+      return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
+    }
+
+    async function trackSelectedBus() {
+      const selectedBus = busSelect.value;
+      if (!selectedBus) return alert("Select a bus first");
+
+      if (!navigator.geolocation) return alert("Geolocation not supported");
+      navigator.geolocation.getCurrentPosition(async pos => {
+        const userLat = pos.coords.latitude;
+        const userLon = pos.coords.longitude;
+
+        if (!userMarker) userMarker = L.marker([userLat, userLon], {icon: L.icon({iconUrl:"https://cdn-icons-png.flaticon.com/512/64/64113.png", iconSize:[30,30]})}).addTo(map).bindPopup("You are here");
+        else userMarker.setLatLng([userLat, userLon]);
+
+        async function refreshBus() {
+          const { data, error } = await supabase.from('buses').select('*').eq('id', selectedBus).maybeSingle();
+          if (error || !data) { etaEl.innerText = "Bus not found"; return; }
+
+          const { lat, lon } = data;
+          if (!lat || !lon) return;
+
+          if (!busMarker) busMarker = L.marker([lat, lon]).addTo(map).bindPopup(`Bus ${selectedBus}`);
+          busMarker.setLatLng([lat, lon]);
+
+          // calculate ETA (assuming avg speed ~30 km/h)
+          const dist = getDistanceKm(userLat, userLon, lat, lon);
+          const etaMinutes = (dist / 30) * 60;
+          etaEl.innerText = `ETA: ~${Math.max(0, etaMinutes).toFixed(1)} mins`;
+        }
+
+        refreshBus();
+        if (pollInterval) clearInterval(pollInterval);
+        pollInterval = setInterval(refreshBus, 3000);
+      });
+    }
+
+    trackBtn.addEventListener('click', trackSelectedBus);
+  </script>
+</body>
+</html>
